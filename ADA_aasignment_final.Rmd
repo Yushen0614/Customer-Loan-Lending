@@ -1,0 +1,609 @@
+---
+title: "Group16 Assignment"
+output: html_document
+date: "2023-03-20"
+---
+
+I declare that this work is being submitted on behalf of my group, in accordance with the 
+University's Regulation 11and the WBS guidelines on plagiarism and collusion. All external 
+references and sources are clearly acknowledged and identified within the contents.
+
+No substantial part(s) of the work submitted here has also been submitted in other assessments 
+for accredited courses of study and if this has been done it may result in us being reported for 
+self-plagiarism and an appropriate reduction in marks may be made when marking this piece 
+of work
+
+---
+```{r, message=FALSE, warning=FALSE}
+#Import packages
+#install.packages("kableExtra")
+library(kableExtra)
+#install.packages(factoextra)
+library(factoextra)
+library(cluster)
+library(dplyr)
+library(psych)
+library(psychTools)
+library(readxl)
+library(dendextend)
+library(writexl)
+library(tidyr)
+library(ggplot2)
+```
+### Part 1
+### Question 1-1 Find distinguishing features 
+```{r}
+#Load data
+df1<-read_excel("loan_data_ADA_assignment.xlsx")
+```
+
+```{r}
+#create data dictionary 
+data_dict <- read_excel("data_dict.xlsx")
+kable(data_dict, format="html", col.names = c("Column", "Description"))%>%
+  kable_styling(bootstrap_options = c("responsive"))
+```
+
+```{r}
+#Data cleaning and preparation
+#Create a data frame with variable names and their corresponding number of missing values
+missing_counts <- data.frame(variable = names(df1), missing = colSums(is.na(df1)))
+
+ggplot(missing_counts, aes(x = missing, y = variable)) +
+  geom_point() +
+  geom_text(aes(label = missing), hjust = -0.2) +
+  scale_x_continuous(expand = c(0, 0), limits = c(0, max(missing_counts$missing) + 100)) +
+  xlab("Number of missing values") +
+  ylab("Variable name")
+
+```
+
+```{r}
+# count number of 0s in each variable
+zero_counts <- sapply(df1, function(x) sum(x == 0, na.rm = TRUE))
+# create a data frame of variable names and zero counts
+zero_counts_df1 <- data.frame(variable = names(df1), zero_count = zero_counts)
+
+# plot the graph
+library(ggplot2)
+ggplot(zero_counts_df1, aes(x = zero_count, y = variable)) +
+  geom_point(size = 2) +
+  xlab("Number of Zeros") +
+  ylab("Variable Name") +
+  ggtitle("Counts of Zeros in Variables")
+
+```
+
+```{r}
+#check the correlation of total_pymnt and total_rec_prncp
+correlation_coefficient <- cor(df1$total_pymnt, df1$total_rec_prncp)
+correlation_coefficient
+
+```
+
+```{r}
+#Select varibles for cluster analysis
+#Reason for deleting variable, as seen in Data cleaning and preparation and Appendix 1.1
+df <-df1 %>% mutate (loan_amnt=df1$loan_amnt,
+                     sub_grade=df1$sub_grade,
+                     int_rate=df1$int_rate,
+                     annual_inc=df1$annual_inc,
+                     dti=df1$dti,
+                     delinq_2yrs=df1$delinq_2yrs,
+                     inq_last_6mths=df1$inq_last_6mths,
+                     revol_bal=df1$revol_bal,
+                     open_acc=df1$open_acc,
+                     total_acc=df1$total_acc,
+                     tot_cur_bal=df1$tot_cur_bal,
+                     revol_bal=df1$revol_bal,
+                     total_credit_rv=df1$total_credit_rv,
+                     revol_util=df1$revol_util,
+                     total_rec_prncp= df1$total_rec_prncp) %>%
+            select(loan_amnt, int_rate,sub_grade, annual_inc, 
+                   dti, delinq_2yrs, inq_last_6mths, revol_bal, open_acc,
+                   total_acc, tot_cur_bal, total_credit_rv, revol_util,total_rec_prncp)
+```
+
+```{r}
+#keep sub_grade and convert it into ordinal value
+sub_grade_mapping <- c(A1=1, A2=2, A3=3, A4=4, A5=5,
+                       B1=6, B2=7, B3=8, B4=9, B5=10,
+                       C1=11, C2=12, C3=13, C4=14, C5=15,
+                       D1=16, D2=17, D3=18, D4=19, D5=20,
+                       E1=21, E2=22, E3=23, E4=24, E5=25,
+                       F1=26, F2=27, F3=28, F4=29, F5=30,
+                       G1=31, G2=32, G3=33, G4=34, G5=35)
+df$sub_grade <- sub_grade_mapping[df$sub_grade]
+```
+
+```{r}
+# NA value
+names(df)[sapply(df, anyNA)]
+
+# tot_cur_bal, total_credit_rv always miss values at the same time (14618)
+# remove missing values
+df <- filter(df,!is.na(tot_cur_bal))
+df <- filter(df,!is.na(revol_util))
+
+```
+
+```{r}
+# Check the structure of the data
+str(df)
+
+# Describe the data to check is there any abnormality.
+describe(df)
+
+headTail(df)
+```
+
+```{r}
+# Because bigger value will dominate analysis, we need to standardise the data
+df <- scale(df)
+```
+
+```{r}
+# Check assumptions to see whether whether there is multicollinearity
+dfMatrix<-cor(df)
+
+# Round the matrix
+round(df, 2)
+
+lowerCor(df)
+#we found some mulit-conlinearity, but we decided to run entire analysis and check the outcome first.
+
+# Assess the suitability for factor analysis. It's greater than 0.5
+KMO(df)
+```
+
+```{r}
+# Find where eigen value is sharply decreased and above 1
+pcModel<-principal(df, 14, rotate="none")
+print(pcModel)
+
+plot(pcModel$values, type="b")
+```
+
+```{r}
+#We tried several rotate methods to find the best outcome
+pcModel5c<-principal(df, 5, rotate="cluster")
+print.psych(pcModel5c, cut=0.3, sort=TRUE)
+pcModel5c$loadings
+
+pcModel5c<-principal(df, 5, rotate="cluster", scores = TRUE)
+fa.diagram(pcModel5c)
+```
+
+```{r}
+# Set seed 
+set.seed(222)
+
+# Take sampling
+fscores <- pcModel5c$scores
+
+sample <- sample(1:nrow(df), 500)
+
+fscores_sample <- fscores[sample,]
+```
+
+```{r}
+# Check outliers and remove, since cluster analysis is sensitive to outliers
+Maha <- mahalanobis(fscores_sample, colMeans(fscores_sample), cov(fscores_sample))
+print(Maha)
+
+MahaPvalue <-pchisq(Maha, df=4, lower.tail = FALSE)
+print(MahaPvalue)
+print(sum(MahaPvalue<0.01))
+
+dfMaha<-cbind(fscores_sample, Maha, MahaPvalue)
+dfMaha %>% subset(MahaPvalue > 0.01) %>% subset(select = -c(Maha, MahaPvalue)) -> fscores_sample
+
+```
+
+```{r}
+#Cluster Analysis
+#Since we don’t know beforehand which linkage method will produce the best clusters, we will write a short function to perform hierarchical clustering using several different methods.
+
+m <- c( "average", "single", "complete", "ward")
+names(m) <- c( "average", "single", "complete", "ward")
+
+ac <- function(x) {
+  agnes(fscores_sample, method = x)$ac
+}
+```
+
+```{r}
+#Calculate agglomerative coefficient for each clustering linkage method
+sapply(m, ac)
+
+#We can see that Ward’s minimum variance method produces the highest agglomerative coefficient, thus we’ll use that as the method for our final hierarchical clustering:
+```
+
+```{r}
+#Determine the Optimal Number of Clusters
+gap_stat <- clusGap(fscores_sample, FUN = hcut, nstart = 25, K.max = 10, B = 50)
+```
+
+```{r}
+#produce plot of clusters vs. gap statistic
+fviz_gap_stat(gap_stat)
+
+#From the plot we can see that the gap statistic is high at k = 4 clusters. Thus, we’ll choose to group our observations into 4 distinct clusters.
+```
+
+```{r}
+#Finding distance matrix
+distance_mat <- dist(fscores_sample, method = 'euclidean')
+```
+
+```{r}
+set.seed(3)  # Setting seed
+Hierar_cl <- hclust(distance_mat, method = "ward.D")
+Hierar_cl
+```
+
+```{r}
+#Plotting dendrogram
+plot(Hierar_cl)
+
+```
+
+```{r}
+#Append cluster labels to original data
+fit <- cutree(Hierar_cl, k = 4)
+fit
+
+fscores_sample_df <-data.frame(fscores_sample)
+final_data <- mutate(fscores_sample_df, cluster=fit)
+dplyr::count(final_data, cluster)
+```
+
+```{r}
+#cut and color the tree at any desire cluster or height
+dend_hierar_cl <- as.dendrogram(Hierar_cl)
+dend_colored <- color_branches(dend_hierar_cl, k=4)
+plot(dend_colored)
+```
+
+```{r}
+#calculate the mean for each category for each cluster
+hcentres<-aggregate(x=final_data, by=list(cluster=fit), FUN="mean")
+print(hcentres)
+```
+
+```{r}
+#Let's try K-means clustering to check whether it can get better and reasonable clusters
+set.seed(50)
+k_cl <- kmeans(fscores_sample, 4, nstart=500)
+k_cl 
+```
+
+```{r}
+#Append cluster labels to original data 
+ClusterResult <- cbind(
+  fscores_sample,
+  k_cl$cluster
+) %>% as.data.frame()
+
+colnames(ClusterResult)[ncol(ClusterResult)] <- 'Cluster'
+
+table(ClusterResult$Cluster)
+```
+
+```{r}
+# Plot the distribution of each cluster with RC2 and RC5
+( ggplot(ClusterResult, aes(x = RC2, y = RC5, color = factor(Cluster))) +
+  geom_point() +
+  ggtitle("Distribution of observations with each cluster in terms of RC2 and RC5") + 
+  scale_color_discrete() -> scatter_1 )
+
+ggsave('scatter1.jpg', scatter_1)
+```
+
+```{r}
+# Plot the distribution of each cluster with RC1 and RC3
+( ggplot(ClusterResult, aes(x = RC1, y = RC3, color = factor(Cluster))) +
+  geom_point() +
+  ggtitle("Distribution of observations with each cluster in terms of RC1 and RC3") + 
+  scale_color_discrete() -> scatter_2 )
+
+ggsave('scatter2.jpg', scatter_2)
+```
+
+```{r}
+#Plot the result of each cluster with PCs
+#Plot the result of each cluster with PCs
+ClusterResultForPlot1 <- ClusterResult %>%
+  gather( key = Principal_Components,
+          value = Normalized_Value, -c(Cluster))
+
+ClusterResultForPlot1$Principal_Components <- ClusterResultForPlot1$Principal_Components %>% factor( levels = c('RC1','RC2','RC3', 'RC4', 'RC5'))
+
+( ggplot( data = ClusterResultForPlot1) + 
+  geom_boxplot( aes( x = Principal_Components,
+                     y = Normalized_Value, color=Principal_Components),
+                size = 0.7) +
+  scale_x_discrete(guide=guide_axis(n.dodge=2)) +
+  xlab("Principal Components") +
+  ggtitle("Distribution of Scores of Principal Components for Each Cluster") + 
+  facet_wrap( ~ Cluster, nrow=1) -> boxplot_1 )
+
+ggsave('boxplot1.jpg', boxplot_1)
+```
+
+```{r}
+ClusterResultForPlot2 <- ClusterResult %>%
+  gather( key = Principal_Components,
+          value = Normalized_Value, -c(Cluster))
+
+ClusterResultForPlot2$Cluster <- ClusterResultForPlot2$Cluster %>% factor( levels = c('1','2','3', '4'))
+
+( ggplot( data = ClusterResultForPlot2) + 
+  geom_boxplot( aes( x = Cluster,
+                     y = Normalized_Value, color=Cluster),
+                size = 0.7) +
+  xlab("Principal Components") +
+  ggtitle("Distribution of Cluster for Each Principal Component") + 
+  facet_wrap( ~ Principal_Components, nrow=1) -> boxplot_2 )
+
+ggsave('boxplot2.jpg', boxplot_2)
+```
+
+### Question 1-2 Validation
+```{r}
+# Since we decided to perform K-means clustering, we sampled 100 records from "ClusterRuslt", which is the outcome of K-means clustering.
+set.seed(29)
+sample_kmeans_100 <- sample_n(ClusterResult, 100)
+sample_kmeans_100_df <- select(sample_kmeans_100,1:5)
+```
+
+```{r}
+# K-means for validation
+set.seed(5)
+k_cl00 <- kmeans(sample_kmeans_100_df, 4,nstart=50)
+k_cl00
+```
+
+```{r}
+# Based on the features of each cluster and proportion, we reallocated the order of cluster
+final_data_kmeans_100 <- mutate(sample_kmeans_100, cluster_new=k_cl00$cluster)
+final_data_kmeans_100$cluster_new <- ifelse(final_data_kmeans_100$cluster_new == 4, 2, ifelse(final_data_kmeans_100$cluster_new == 1, 3, ifelse(final_data_kmeans_100$cluster_new == 2, 1, ifelse(final_data_kmeans_100$cluster_new == 3, 4, final_data_kmeans_100$cluster_new))))
+
+#compared the result from sample and subsample
+sum(final_data_kmeans_100$Cluster==final_data_kmeans_100$cluster_new)
+
+```
+
+### Question 1-3 Useful solution in practice
+```{r}
+#We found that the better the subgrade, the lower the chance of bad debt.
+loan_is_bad <- as.data.frame(df1 %>% 
+                              group_by(sub_grade) %>% 
+                              summarise(num_true = sum(loan_is_bad),
+                                        num_false = sum(!loan_is_bad)))
+loan_is_bad <- mutate(loan_is_bad, 
+                      percentage_of_bad_loan =round(num_true/(num_true+num_false),2))
+```
+
+### Part 2
+
+## Variables' Description
+
+- RespondantId: unique ID for each participant 
+- RecordedDate: the date of finishing the experiment for each participant
+- RiskAppetite: the level of risk that the participant is willing to take in investing their money
+
+- *_init: statistics for initial decision stage
+- *_fin: statistics for final decision stage
+
+- typeI_*: number of type I errors each participant made in each round (initial/final stage)
+- typeII_* number of type II errors each participant made in each round (initial/final stage)
+- ai_typeI: number of type I errors the AI (computer model) made in each round
+- ai_typeII: number of type II errors the AI (computer model) made in each round
+
+- agree_*: number of decisions made in initial stage in each round that agreed with AI's prediction
+- conflict_*: number of non-blank decisions made in initial stage in each round that conflicted with AI's prediction
+- revised_per_ai: number of non-blank decisions made in initial stage in each round that conflicted with AI's predictions that were revised to follow AI's predictions
+- revised_agst_ai: number of non-blank decisions made in initial stage in each round that agreed with AI's predictions that were revised to conflict with AI's predictions
+- unrevised_conflict: number of non-blank decisions made in initial stage in each round that conflicted with AI's predictions that were un-revised 
+- unrevised_agree: number of non-blank decisions made in initial stage in each round that agreed with AI's predictions that were un-revised
+
+```{r setup, message=FALSE, warning=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(ggplot2)
+#install.packages("coin")
+library(coin)
+```
+
+### Question 4
+```{r}
+## Load Data
+update <- read.csv(
+  "data_analysis_update.csv",
+  header = T,
+  stringsAsFactors = FALSE)
+
+baseline <- read.csv(
+  "data_analysis_baseline.csv",
+  header = T,
+  stringsAsFactors = FALSE)
+
+```
+
+```{r}
+## Compute Type I (false positive) Rate  &  Type II (false negative) Rate 
+baseline$type1_rate <- baseline$FP/baseline$good_loan_total
+baseline$type2_rate <- baseline$FN/baseline$bad_loan_total
+
+update$type1rate_init <-update$FP_init/update$good_loan_total
+update$type2rate_init <-update$FN_init/update$bad_loan_total
+update$type1rate_fin <-update$FP_fin/update$good_loan_total
+update$type2rate_fin <-update$FP_init/update$bad_loan_total
+
+## Compute the rate of approve
+baseline$approve_rate <- (baseline$FN + baseline$TN) / (baseline$TP + baseline$FP + baseline$TN + baseline$FN)
+update$approve_rate_fin <-(update$FN_fin + update$TN_fin) / (update$TP_fin + update$FP_fin + update$TN_fin + update$FN_fin)
+
+# Calculate accuracy for baseline and update
+baseline$accuracy <- (baseline$TP + baseline$TN) / (baseline$TP + baseline$FP + baseline$TN + baseline$FN)
+update$accuracy_fin <- (update$TP_fin + update$TN_fin) / (update$TP_fin + update$FP_fin + update$TN_fin + update$FN_fin)
+
+```
+
+
+```{r}
+# Create boxplot of accuracy for baseline and update
+boxplot(baseline$accuracy, update$accuracy_fin, 
+        names = c("Baseline", "Update"),
+        xlab = "", ylab = "Accuracy",
+        main = "Accuracy Comparison")
+
+# Create boxplot of approve rate for baseline and update
+boxplot(baseline$approve_rate, update$approve_rate_fin, 
+        names = c("Baseline", "Update"),
+        xlab = "", ylab = "Approve Rate",
+        main = "Comparison between Approve Rate")
+
+
+# Create histogram to compare the the number of conflict with AI in the initial and final stage
+init <- update %>%
+  select(ResponseId, conflict_init) %>%
+  rename(conflict = conflict_init)
+init$AIadvice <- "init"
+
+fin <- update %>%
+  select(ResponseId, conflict_fin) %>%
+  rename(conflict = conflict_fin)
+fin$AIadvice <- "fin"
+
+conflict <- rbind(init, fin)
+conflict$AIadvice <- as.factor(conflict$AIadvice)
+
+ggplot(data = conflict, aes(x = ResponseId, y = conflict, fill = AIadvice)) +
+  geom_bar(stat = "identity", position = position_dodge()) + 
+  coord_flip()
+
+```
+
+```{r}
+# Distribution 
+hist(baseline$type1_rate)
+hist(update$type1rate_init)
+hist(update$type1rate_fin)
+hist(baseline$type2_rate)
+hist(update$type2rate_init)
+hist(update$type2rate_fin)
+hist(baseline$accuracy)
+hist(update$accuracy_fin)
+hist(update$approve_rate_fin)
+```
+
+```{r}
+
+# Prepare data and put them into one dataframe
+Base <- select(baseline,ResponseId,RiskAppetite,type1_rate,type2_rate,accuracy,approve_rate)
+Base$treatment <- "baseline"
+Base$RiskAppetite <- as.factor(Base$RiskAppetite)
+Base$treatment <- as.factor(Base$treatment)
+
+Update <- update %>%
+  select(ResponseId,RiskAppetite,type1rate_fin,type2rate_fin,accuracy_fin,approve_rate_fin) %>%
+  rename(type1_rate = type1rate_fin,
+         type2_rate = type2rate_fin,
+         accuracy = accuracy_fin,
+         approve_rate = approve_rate_fin)
+Update$treatment <- "update"
+Update$RiskAppetite <- as.factor(Update$RiskAppetite)
+Update$treatment <- as.factor(Update$treatment)
+
+total <- rbind(Base, Update)
+
+```
+
+```{r}
+
+# Single predictor ( type 1 rate, type 2 rate, approve rate and accuracy <-- risk appetite and treatment individually)
+
+# Total_Accuracy
+coin::wilcox_test(accuracy ~ treatment, 
+            data = total,  
+            distribution = "exact", # p = 0.09085 #weakly signifiant
+            conf.int = TRUE
+            )
+
+# Total_Type error 
+coin::wilcox_test(type1_rate ~ treatment, 
+            data = total,  
+            distribution = "exact", # p = 0.6037
+            conf.int = TRUE
+            )
+
+coin::wilcox_test(type2_rate ~ treatment, 
+            data = total,  
+            distribution = "exact", # p = 0.00735 # significant
+            conf.int = TRUE
+            )
+
+coin::wilcox_test(accuracy ~ RiskAppetite, 
+            data = total,  
+            distribution = "exact", # p = 0.985
+            conf.int = TRUE
+            )
+
+coin::wilcox_test(type1_rate ~ RiskAppetite, 
+            data = total,  
+            distribution = "exact", # p = 0.8919
+            conf.int = TRUE
+            )
+
+coin::wilcox_test(type2_rate ~ RiskAppetite, 
+            data = total,  
+            distribution = "exact", # p = 0.6922
+            conf.int = TRUE
+            )
+
+```
+
+```{r}
+
+# Multiple predictors (Risk Appetite & Treatment)  
+
+# Whether type 1 rate, type 2 rate, approve rate and accuracy are impacted by risk appetite and treatment together
+
+a <- lm(type1_rate ~ RiskAppetite + treatment, data = total) # p = 0.7773
+summary(a)
+
+b <- lm(type2_rate ~ RiskAppetite + treatment, data = total) # p = 0.01872
+summary(b)
+
+c <- lm(approve_rate ~ RiskAppetite + treatment, data = total) # p = 0.7785
+summary(c)
+
+d <- lm(accuracy ~ RiskAppetite + treatment, data = total) # p = 0.2329
+summary(d)
+
+```
+
+
+```{r}
+
+# Approve rate -- Risk Appetites
+coin::wilcox_test(approve_rate ~ RiskAppetite, 
+            data = total,  
+            distribution = "exact", # p = 0.4883
+            conf.int = TRUE
+            )
+
+# Total unrevised -- Risk Appetites
+update$change <- (update$unrevised_agree+update$unrevised_confict)
+update$RiskAppetite <- as.factor(update$RiskAppetite)
+coin::wilcox_test(change ~ RiskAppetite, 
+            data = update,  
+            distribution = "exact", # p =  0.8175
+            conf.int = TRUE
+            )
+
+```
+
+  
